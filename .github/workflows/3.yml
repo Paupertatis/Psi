@@ -1,0 +1,55 @@
+name: Auto Fix and Commit
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref }}  # 对于PR，检出特定分支
+
+      # 2. 设置Java环境
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # 3. 缓存Gradle依赖，以加速构建
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # 4. 尝试自动修复代码格式 (例如使用spotlessApply)
+      - name: Auto Fix Code Formatting
+        run: |
+          ./gradlew spotlessApply  # 请根据你的项目替换为实际的修复命令，例如使用Autofix Action[citation:3]
+
+      # 5. 检查是否有文件被更改，如果有则提交
+      - name: Commit changes
+        id: commit_changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git diff --quiet && git diff --staged --quiet || (git add . && git commit -m "style: Auto-format code [skip actions]")
+          echo "changes_committed=$?" >> $GITHUB_OUTPUT
+
+      # 6. 推送更改 (仅在自动修复导致新提交时)
+      - name: Push changes
+        if: steps.commit_changes.outputs.changes_committed == 0
+        run: git push
